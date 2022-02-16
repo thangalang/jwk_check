@@ -1,0 +1,29 @@
+---
+apiVersion: security.istio.io/v1beta1
+kind: RequestAuthentication
+metadata:
+  name: thangalang-jwk-check
+  namespace: thangalang-test
+spec:
+  jwtRules:
+  - forwardOriginalToken: true
+    issuer: https://accounts.google.com
+    jwksUri: https://www.googleapis.com/oauth2/v3/certs
+  - forwardOriginalToken: true
+    issuer: https://identity-staging.wpengine.com/oauth2/default
+    jwksUri: https://identity-staging.wpengine.com/oauth2/default/v1/keys
+  - forwardOriginalToken: true
+    issuer: https://identity-dev.wpengine.com/oauth2/default
+    jwksUri: https://identity-dev.wpengine.com/oauth2/default/v1/keys
+  - forwardOriginalToken: true
+    issuer: https://mystaging.wpengine.com/capi/v1/
+    jwksUri: https://mystaging.wpengine.com/capi/private/.well-known/keys
+  - forwardOriginalToken: true
+    issuer: https://my.dev.wpesvc.net/capi/v1/
+    jwksUri: https://my.dev.wpesvc.net/capi/private/.well-known/keys
+  - forwardOriginalToken: true
+    issuer: https://my.wpengine.com/capi/v1/
+    jwksUri: "https://my.wpengine.com/capi/private/.well-known/keys"
+  selector:
+    matchLabels:
+      app: jwk-check

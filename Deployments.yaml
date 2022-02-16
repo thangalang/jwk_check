@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jwk-check # kpt-set: ${app-name}
+  namespace: thangalang-test # kpt-set: ${namespace}
+  labels:
+    app: jwk-check # kpt-set: ${app-name}
+  annotations:
+    wpengine.com/catalyst-k8s-lib.pkg-version.deployment: 1.1.1 # kpt-set: ${pkg-version}
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: jwk-check # kpt-set: ${app-name}
+  template:
+    metadata:
+      labels:
+        app: jwk-check # kpt-set: ${app-name}
+    spec:
+      serviceAccountName: service # kpt-set: ${app-name}
+      securityContext:
+        # All containers must run as a non-root user; we choose 10101 as
+        # a uid/gid that is unlikely to conflict with any container.
+        runAsNonRoot: true
+        runAsUser: 10101
+        runAsGroup: 10101
+        # An unset fsGroup indicates that the ownership of files in
+        #   mounted volumes will not be modified at mount time.
+        # fsGroup:
+      # Don't use host network, PID, or IPC namespaces
+      hostNetwork: false
+      hostPID: false
+      hostIPC: false
+      containers:
+        - name: app
+          image: gcr.io/wpe-cr-dev/jwk-check:latest # kpt-set: ${image}
+          ports:
+            - containerPort: 8000 # kpt-set: ${target-port}
+          securityContext:
+            # Containers may not run in privileged mode
+            privileged: false
+            allowPrivilegeEscalation: false
+            # Containers cannot write to the root FS
+            readOnlyRootFilesystem: true
+            # Containers do not mount the sensitive subdirectories of /proc
+            procMount: "DefaultProcMount"
+            # Containers must not add any capabilities, and they must drop NET_RAW and SYS_ADMIN
+            capabilities:
+              add: []
+              drop: [NET_RAW, SYS_ADMIN]
+          resources:
+            limits:
+              cpu: "100m"
+              memory: 512M
+            requests:
+              cpu: "100m"
+              memory: 512M
+      affinity:
+        podAntiAffinity:
+          # instances should run in different zones
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: jwk-check # kpt-set: ${app-name}
+                topologyKey: topology.kubernetes.io/zone
+              weight: 100
+          # instances must run on different nodes
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app: jwk-check # kpt-set: ${app-name}
+              topologyKey: kubernetes.io/hostname

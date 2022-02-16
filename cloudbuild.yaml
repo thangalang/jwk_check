@@ -1,0 +1,13 @@
+timeout: 300s
+
+substitutions:
+  _IMAGE_NAME: 'gcr.io/wpe-cr-dev/jwk_check'
+
+steps:
+  - id: docker build
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --target=builder
+      - --tag=${_IMAGE_NAME}:test
+      - .
