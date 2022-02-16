@@ -17,7 +17,7 @@ spec:
       labels:
         app: jwk-check # kpt-set: ${app-name}
     spec:
-      serviceAccountName: service # kpt-set: ${app-name}
+      serviceAccountName: thangalang-test-app # kpt-set: ${app-name}
       securityContext:
         # All containers must run as a non-root user; we choose 10101 as
         # a uid/gid that is unlikely to conflict with any container.
@@ -33,7 +33,7 @@ spec:
       hostIPC: false
       containers:
         - name: app
-          image: gcr.io/wpe-cr-dev/jwk-check:latest # kpt-set: ${image}
+          image: gcr.io/wpe-cr-dev/jwk-check:0.3 # kpt-set: ${image}
           ports:
             - containerPort: 8000 # kpt-set: ${target-port}
           securityContext:

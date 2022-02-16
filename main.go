@@ -45,10 +45,12 @@ func main() {
 	// defer cancel()
 
 	for {
-		cmd := `curl localhost:15000/config_dump | jq '.configs[] | select(."@type"=="type.googleapis.com/envoy.admin.v3.ListenersConfigDump") | .dynamic_listeners[] | .active_state.listener.filter_chains[] | .filters[] | .typed_config.http_filters[] | select(.name=="envoy.filters.http.jwt_authn") | .typed_config.providers '`
-		out, err := exec.Command("bash", "-c", cmd).Output()
+		// cmd := `curl localhost:15000/config_dump | jq '.configs[] | select(."@type"=="type.googleapis.com/envoy.admin.v3.ListenersConfigDump") | .dynamic_listeners[] | .active_state.listener.filter_chains[] | .filters[] | .typed_config.http_filters[] | select(.name=="envoy.filters.http.jwt_authn") | .typed_config.providers '`
+		cmd := `curl localhost:15000/config_dump | jq '.configs[] | select(."@type"=="type.googleapis.com/envoy.admin.v3.ListenersConfigDump") | .dynamic_listeners[] | .. | .providers? // empty'`
+		out, err := exec.Command("sh", "-c", cmd).Output()
 		if err != nil {
 			log.Println("Error curling for config_dump")
+			log.Println(err.Error())
 		}
 
 		jwk_providers := map[string]provider{}
