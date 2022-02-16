@@ -33,7 +33,7 @@ spec:
       hostIPC: false
       containers:
         - name: app
-          image: gcr.io/wpe-cr-dev/jwk-check:0.3 # kpt-set: ${image}
+          image: gcr.io/wpe-cr-dev/jwk-check:0.4 # kpt-set: ${image}
           ports:
             - containerPort: 8000 # kpt-set: ${target-port}
           securityContext:
