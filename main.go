@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -10,7 +11,6 @@ import (
 
 	"github.com/blendle/zapdriver"
 	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 )
 
 type key struct {
@@ -109,15 +109,21 @@ func check_diff(logger *zap.Logger, c *http.Client, local_providers map[string]p
 			))
 		}
 
-		logger.Info("Comparing", zapdriver.Labels(
+		logger.Info(fmt.Sprintf("Comparing keys for %v", lp.Issuer), zapdriver.Labels(
 			zapdriver.Label("Issuer", lp.Issuer),
+			zapdriver.Label("Local Keys", fmt.Sprintf("%v", get_key_ids(local_keys))),
+			zapdriver.Label("Remote Keys", fmt.Sprintf("%v", get_key_ids(remote_keys))),
 		))
 
 		mismatch := compare(logger, lp, local_keys, remote_keys)
 		if len(mismatch) != 0 {
-			logger.Error("Mismatch of keys")
-		} else {
-			logger.Info("No mismatch")
+			logger.Error(fmt.Sprintf("Mismatch of keys for issuer %v", lp.Issuer),
+				zapdriver.Labels(
+					zapdriver.Label("Issuer", lp.Issuer),
+					zapdriver.Label("Local Keys", fmt.Sprintf("%v", get_key_ids(local_keys))),
+					zapdriver.Label("Remote Keys", fmt.Sprintf("%v", get_key_ids(remote_keys))),
+				),
+			)
 		}
 
 		rotated := is_key_rotated(logger, lp.Issuer, remote_keys)
@@ -127,7 +133,7 @@ func check_diff(logger *zap.Logger, c *http.Client, local_providers map[string]p
 		}
 
 		if rotated {
-			logger.Info("Key rotated", zapdriver.Labels(
+			logger.Info(fmt.Sprintf("Key rotated %v", lp.Issuer), zapdriver.Labels(
 				zapdriver.Label("Issuer", lp.Issuer),
 			))
 		}
@@ -138,14 +144,10 @@ func is_key_rotated(logger *zap.Logger, issuer string, remote_keys []key) bool {
 	for _, k := range remote_keys {
 		if !contains(last_used_keys[issuer], k) {
 			// log difference in case thats needed
-			current_remote_keys_labels := get_keys_labels(remote_keys)
-			last_known_keys_labels := get_keys_labels(last_used_keys[issuer])
-			logger.Info("Public Key Rotated", zapdriver.Labels(
+			logger.Info(fmt.Sprintf("Public Key Rotated %v", issuer), zapdriver.Labels(
 				zapdriver.Label("Issuer", issuer),
-				zapdriver.Label("Current Remote Keys", ""),
-				current_remote_keys_labels,
-				zapdriver.Label("Last Known Remote Keys", ""),
-				last_known_keys_labels,
+				zapdriver.Label("Current Remote Keys", fmt.Sprintf("%v", get_key_ids(remote_keys))),
+				zapdriver.Label("Last Known Remote Keys", fmt.Sprintf("%v", get_key_ids(last_used_keys[issuer]))),
 			))
 			// update last used keys to remote_keys
 			last_used_keys[issuer] = remote_keys
@@ -155,12 +157,12 @@ func is_key_rotated(logger *zap.Logger, issuer string, remote_keys []key) bool {
 	return false
 }
 
-func get_keys_labels(keys []key) zapcore.Field {
-	zdl := []zapcore.Field{}
+func get_key_ids(keys []key) string {
+	result := ""
 	for _, k := range keys {
-		zdl = append(zdl, zapdriver.Label("Key ID", k.Kid))
+		result = result + fmt.Sprintf("|kid: %v ", k.Kid)
 	}
-	return zapdriver.Labels(zdl...)
+	return result
 }
 
 // compare verify every remote key is stored locally
@@ -168,14 +170,12 @@ func get_keys_labels(keys []key) zapcore.Field {
 func compare(logger *zap.Logger, lp provider, local_keys []key, remote_keys []key) []string {
 	result := []string{}
 
-	localFields := logLocalKeys(logger, local_keys)
-
 	for _, rk := range remote_keys {
 		if !contains(local_keys, rk) {
 			logger.Error("ALERT! Remote key not found locally", zapdriver.Labels(
 				zapdriver.Label("Issuer", lp.Issuer),
 				zapdriver.Label("Remote Key ID", rk.Kid),
-				zapdriver.Labels(localFields),
+				zapdriver.Label("Local Keys", fmt.Sprintf("%v", get_key_ids(local_keys))),
 			))
 			result = append(result, lp.Issuer, rk.Kid)
 		}
@@ -183,13 +183,13 @@ func compare(logger *zap.Logger, lp provider, local_keys []key, remote_keys []ke
 	return result
 }
 
-func logLocalKeys(logger *zap.Logger, keys []key) zapcore.Field {
-	zdl := []zapcore.Field{}
-	for _, k := range keys {
-		zdl = append(zdl, zapdriver.Label("Local Key ID", k.Kid))
-	}
-	return zapdriver.Labels(zdl...)
-}
+// func logLocalKeys(logger *zap.Logger, keys []key) zapcore.Field {
+// 	zdl := []zapcore.Field{}
+// 	for _, k := range keys {
+// 		zdl = append(zdl, zapdriver.Label("Local Key ID", k.Kid))
+// 	}
+// 	return zapdriver.Labels(zdl...)
+// }
 
 // contains check if string is in list of string
 func contains(localKeys []key, remoteKey key) bool {
