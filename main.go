@@ -7,6 +7,10 @@ import (
 	"net/http"
 	"os/exec"
 	"time"
+
+	"github.com/blendle/zapdriver"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 type key struct {
@@ -50,75 +54,99 @@ var last_used_keys = map[string][]key{
 
 func main() {
 	client := &http.Client{Timeout: 1000 * time.Millisecond}
-	// Do this every minute
-	// ctx, cancel := context.WithTimeout(context.Background(), 5000*time.Millisecond)
-	// defer cancel()
-
+	logger, err := zapdriver.NewProduction()
+	if err != nil {
+		log.Println(err.Error)
+	}
 	for {
 		// cmd := `curl localhost:15000/config_dump | jq '.configs[] | select(."@type"=="type.googleapis.com/envoy.admin.v3.ListenersConfigDump") | .dynamic_listeners[] | .active_state.listener.filter_chains[] | .filters[] | .typed_config.http_filters[] | select(.name=="envoy.filters.http.jwt_authn") | .typed_config.providers '`
 		cmd := `curl localhost:15000/config_dump | jq '.configs[] | select(."@type"=="type.googleapis.com/envoy.admin.v3.ListenersConfigDump") | .dynamic_listeners[] | .. | .providers? // empty'`
 		out, err := exec.Command("sh", "-c", cmd).Output()
 		if err != nil {
-			log.Println("Error curling for config_dump")
-			log.Println(err.Error())
+			logger.Error("Error curling for config_dump")
+			logger.Error(err.Error())
 		}
 
 		jwk_providers := map[string]provider{}
 		err = json.Unmarshal(out, &jwk_providers)
 		if err != nil {
-			log.Println("Error unmarshalling curled objects")
+			logger.Error("Error unmarshalling curled objects")
+			logger.Error(err.Error())
 		}
 
 		// Compare every issuer's local key id to what the issuer show
-		check_diff(client, jwk_providers)
+		check_diff(logger, client, jwk_providers)
 		time.Sleep(1 * time.Minute)
 	}
 }
 
 // check_diff compare every local jwk key with the current provider key
-func check_diff(c *http.Client, local_providers map[string]provider) {
+func check_diff(logger *zap.Logger, c *http.Client, local_providers map[string]provider) {
 	for _, lp := range local_providers {
 		// provider key uri
 		uri, ok := keys_uri[lp.Issuer]
 		if !ok {
-			log.Println("Issuer not coded for")
+			logger.Info("Issuer not coded for",
+				zapdriver.Labels(
+					zapdriver.Label("Issuer", lp.Issuer),
+				),
+			)
 		}
 
 		remote_keys, err := get_keys(c, uri)
 		if err != nil {
-			log.Println("Error getting remote keys for", uri)
+			logger.Error("Error getting remote keys for",
+				zapdriver.Labels(
+					zapdriver.Label("Key", uri),
+				),
+			)
 		}
 
 		local_keys, err := convert_lp_key(lp)
 		if err != nil {
-			log.Println("Error converting local inline string to key")
+			logger.Error("Error converting local inline string to key", zapdriver.Labels(
+				zapdriver.Label("Issuer", lp.Issuer),
+			))
 		}
 
-		log.Println("Comparing", lp.Issuer)
-		mismatch := compare(lp, local_keys, remote_keys)
+		logger.Info("Comparing", zapdriver.Labels(
+			zapdriver.Label("Issuer", lp.Issuer),
+		))
+
+		mismatch := compare(logger, lp, local_keys, remote_keys)
 		if len(mismatch) != 0 {
-			log.Println(mismatch)
+			logger.Error("Mismatch of keys")
 		} else {
-			log.Println("No mismatch")
+			logger.Info("No mismatch")
 		}
 
-		rotated := is_key_rotated(lp.Issuer, remote_keys)
+		rotated := is_key_rotated(logger, lp.Issuer, remote_keys)
 		if err != nil {
-			log.Println("Error check is key rotated")
-			log.Println(err.Error())
+			logger.Error("Error check is key rotated")
+			logger.Error(err.Error())
 		}
 
 		if rotated {
-			log.Println(lp.Issuer, "rotated its keys")
+			logger.Info("Key rotated", zapdriver.Labels(
+				zapdriver.Label("Issuer", lp.Issuer),
+			))
 		}
 	}
 }
 
-func is_key_rotated(issuer string, remote_keys []key) bool {
+func is_key_rotated(logger *zap.Logger, issuer string, remote_keys []key) bool {
 	for _, k := range remote_keys {
 		if !contains(last_used_keys[issuer], k) {
 			// log difference in case thats needed
-			log.Println("Difference in keys", last_used_keys[issuer], remote_keys)
+			current_remote_keys_labels := get_keys_labels(remote_keys)
+			last_known_keys_labels := get_keys_labels(last_used_keys[issuer])
+			logger.Info("Public Key Rotated", zapdriver.Labels(
+				zapdriver.Label("Issuer", issuer),
+				zapdriver.Label("Current Remote Keys", ""),
+				current_remote_keys_labels,
+				zapdriver.Label("Last Known Remote Keys", ""),
+				last_known_keys_labels,
+			))
 			// update last used keys to remote_keys
 			last_used_keys[issuer] = remote_keys
 			return true
@@ -127,17 +155,40 @@ func is_key_rotated(issuer string, remote_keys []key) bool {
 	return false
 }
 
+func get_keys_labels(keys []key) zapcore.Field {
+	zdl := []zapcore.Field{}
+	for _, k := range keys {
+		zdl = append(zdl, zapdriver.Label("Key ID", k.Kid))
+	}
+	return zapdriver.Labels(zdl...)
+}
+
 // compare verify every remote key is stored locally
 // if not, prints the remote key that is not stored locally
-func compare(lp provider, local_keys []key, remote_keys []key) []string {
+func compare(logger *zap.Logger, lp provider, local_keys []key, remote_keys []key) []string {
 	result := []string{}
+
+	localFields := logLocalKeys(logger, local_keys)
+
 	for _, rk := range remote_keys {
 		if !contains(local_keys, rk) {
-			log.Println("ALERT! Remote key not found locally", lp.Issuer, rk, local_keys)
+			logger.Error("ALERT! Remote key not found locally", zapdriver.Labels(
+				zapdriver.Label("Issuer", lp.Issuer),
+				zapdriver.Label("Remote Key ID", rk.Kid),
+				zapdriver.Labels(localFields),
+			))
 			result = append(result, lp.Issuer, rk.Kid)
 		}
 	}
 	return result
+}
+
+func logLocalKeys(logger *zap.Logger, keys []key) zapcore.Field {
+	zdl := []zapcore.Field{}
+	for _, k := range keys {
+		zdl = append(zdl, zapdriver.Label("Local Key ID", k.Kid))
+	}
+	return zapdriver.Labels(zdl...)
 }
 
 // contains check if string is in list of string
