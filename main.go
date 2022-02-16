@@ -117,6 +117,8 @@ func check_diff(c *http.Client, local_providers map[string]provider) {
 func is_key_rotated(issuer string, remote_keys []key) bool {
 	for _, k := range remote_keys {
 		if !contains(last_used_keys[issuer], k) {
+			// log difference in case thats needed
+			log.Println("Difference in keys", last_used_keys[issuer], remote_keys)
 			// update last used keys to remote_keys
 			last_used_keys[issuer] = remote_keys
 			return true
