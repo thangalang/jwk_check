@@ -1,6 +1,0 @@
-[ { "name": "Item 1",
-    "tags": [{ "name": "TAG" },  { "name": "TAG" }, { "name": "Not-TAG" } ] },
-  { "name": "Item 2",
-    "tags": [ { "name": "Not-TAG" } ] },
-  { "name": "Item 3",
-    "tags": [ { "name": "Not-TAG", "property": "yes" }]} ]
