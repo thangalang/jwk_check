@@ -38,6 +38,16 @@ var keys_uri = map[string]string{
 	"https://identity.wpengine.com/oauth2/default":         "https://identity.wpengine.com/oauth2/default/v1/keys",
 }
 
+var last_used_keys = map[string][]key{
+	"https://accounts.google.com":                          {},
+	"https://my.dev.wpesvc.net/capi/v1/":                   {},
+	"https://mystaging.wpengine.com/capi/v1/":              {},
+	"https://my.wpengine.com/capi/v1/":                     {},
+	"https://identity-dev.wpengine.com/oauth2/default":     {},
+	"https://identity-staging.wpengine.com/oauth2/default": {},
+	"https://identity.wpengine.com/oauth2/default":         {},
+}
+
 func main() {
 	client := &http.Client{Timeout: 1000 * time.Millisecond}
 	// Do this every minute
@@ -91,7 +101,28 @@ func check_diff(c *http.Client, local_providers map[string]provider) {
 		} else {
 			log.Println("No mismatch")
 		}
+
+		rotated := is_key_rotated(lp.Issuer, remote_keys)
+		if err != nil {
+			log.Println("Error check is key rotated")
+			log.Println(err.Error())
+		}
+
+		if rotated {
+			log.Println(lp.Issuer, "rotated its keys")
+		}
 	}
+}
+
+func is_key_rotated(issuer string, remote_keys []key) bool {
+	for _, k := range remote_keys {
+		if !contains(last_used_keys[issuer], k) {
+			// update last used keys to remote_keys
+			last_used_keys[issuer] = remote_keys
+			return true
+		}
+	}
+	return false
 }
 
 // compare verify every remote key is stored locally
